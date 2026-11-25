@@ -1,0 +1,40 @@
+'use client';
+import { useMemo, useState } from 'react';
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  type Edge,
+  type Node,
+} from '@xyflow/react';
+
+// @ts-expect-error The package ships this stylesheet, but TypeScript may not resolve its side-effect import declaration.
+import '@xyflow/react/dist/style.css';
+
+type ParsedFile = { filename:string; file_type:string; programs:string[]; jobs:string[]; copybooks:string[]; calls:string[]; tables:string[]; files:string[]; line_count:number };
+type Graph = { nodes:{id:string;label:string;type:string}[]; edges:{source:string;target:string;relation:string}[] };
+type Analysis = { files:ParsedFile[]; graph:Graph; summary:{file_count:number;node_count:number;edge_count:number;program_count:number;table_count:number} };
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const colors:Record<string,string> = {source:'#24344b',program:'#2463eb',job:'#8b5cf6',copybook:'#0e9f6e',table:'#c07a13',dataset:'#64748b'};
+
+function GraphView({ graph }: { graph:Graph }) {
+  const nodes:Node[] = useMemo(() => graph.nodes.map((n,i)=>({id:n.id,position:{x:(i%4)*210,y:Math.floor(i/4)*120},data:{label:<div><small>{n.type}</small><br/><strong>{n.label}</strong></div>},style:{background:colors[n.type]||'#24344b',color:'#fff',border:'1px solid #40536d',borderRadius:12,padding:12,width:170,fontSize:12}})),[graph]);
+  const edges:Edge[] = useMemo(()=>graph.edges.map((e,i)=>({id:`e${i}`,source:e.source,target:e.target,label:e.relation,animated:false,style:{stroke:'#64748b'},labelStyle:{fill:'#9aa9be',fontSize:10}})),[graph]);
+  return <div className="graph"><ReactFlow nodes={nodes} edges={edges} fitView><Background color="#334155" gap={22}/><Controls/></ReactFlow></div>;
+}
+
+export default function Home() {
+  const [files,setFiles]=useState<FileList|null>(null); const [analysis,setAnalysis]=useState<Analysis|null>(null); const [loading,setLoading]=useState(false); const [message,setMessage]=useState('Upload COBOL, JCL, copybook or SQL files to begin.'); const [change,setChange]=useState('CUSTOMER'); const [impact,setImpact]=useState<any>(null); const [code,setCode]=useState('-811'); const [errorInfo,setErrorInfo]=useState<any>(null);
+  async function analyze() { if(!files?.length){setMessage('Choose at least one source file.');return;} setLoading(true);setMessage('Analyzing files…');setImpact(null);try{const form=new FormData();Array.from(files).forEach(f=>form.append('files',f));const res=await fetch(`${API}/api/analyze`,{method:'POST',body:form});const data=await res.json();if(!res.ok)throw new Error(data.detail||'Analysis failed');setAnalysis(data);setMessage('Analysis completed. Review the extracted dependencies below.');}catch(e:any){setMessage(e.message||'Could not connect to backend. Is FastAPI running?');}finally{setLoading(false);}}
+  function runImpact(){if(!analysis){setMessage('Analyze source files first.');return;}const key=change.trim().toUpperCase();const matched=analysis.graph.nodes.filter(n=>n.label.toUpperCase()===key||n.id.toUpperCase()===key||n.label.toUpperCase().includes(key));const ids=new Set<string>();const queue=matched.map(n=>n.id);queue.forEach(id=>ids.add(id));while(queue.length){const current=queue.shift()!;analysis.graph.edges.forEach(e=>{if(e.target===current&&!ids.has(e.source)){ids.add(e.source);queue.push(e.source);}});}const impacted=analysis.graph.nodes.filter(n=>ids.has(n.id));setImpact({matched:matched.length>0,impact_count:impacted.length,risk:impacted.length>=5?'HIGH':impacted.length>=2?'MEDIUM':'LOW',impacted,recommendation:matched.length?'Review dependent programs and jobs, then run regression tests for impacted flows.':'No matching component found. Try a program, table, copybook or dataset name.'});}
+  async function lookupError(){try{const res=await fetch(`${API}/api/errors/${encodeURIComponent(code)}`);const data=await res.json();if(!res.ok)throw new Error(data.detail);setErrorInfo(data);}catch(e:any){setErrorInfo({error:e.message});}}
+  return <main className="shell"><aside className="sidebar"><div className="brand"><span className="logo">LL</span><div><b>LegacyLens</b><small>MAINFRAME INTELLIGENCE</small></div></div><nav><a className="active">◈ Overview</a><a>⌘ Code Explorer</a><a>◉ Dependency Graph</a><a>↗ Change Impact</a><a>⌕ Knowledge Hub</a><a>✦ AI Assistant <em>Coming soon</em></a></nav><div className="sidefoot">MVP workspace<br/><span>Local analysis enabled</span></div></aside>
+  <section className="content"><header><div><p className="eyebrow">WORKSPACE / OVERVIEW</p><h1>Mainframe Intelligence</h1><p className="sub">Understand your legacy application, one dependency at a time.</p></div><div className="status"><span/> LOCAL ENGINE</div></header>
+  <section className="hero"><div><span className="pill">LEGACY MODERNIZATION</span><h2>See the connections.<br/><span>Make changes with confidence.</span></h2><p>Analyze COBOL, JCL, copybooks and DB2 SQL to discover dependencies and assess change impact.</p><label className="upload"><input type="file" multiple accept=".cbl,.cob,.jcl,.cpy,.copy,.sql,.txt" onChange={e=>setFiles(e.target.files)}/><span>＋ Choose source files</span><small>{files?.length?`${files.length} file(s) selected`:'CBL · COB · JCL · CPY · SQL'}</small></label><button className="primary" disabled={loading} onClick={analyze}>{loading?'Analyzing…':'Analyze application →'}</button><p className="message">{message}</p></div><div className="hero-art"><div className="orb">LL</div><div className="orbit orbit1"/><div className="orbit orbit2"/><div className="artlabel">SOURCE → INSIGHT</div></div></section>
+  <section className="stats"><div><small>FILES ANALYZED</small><strong>{analysis?.summary.file_count??'—'}</strong></div><div><small>DEPENDENCY NODES</small><strong>{analysis?.summary.node_count??'—'}</strong></div><div><small>RELATIONSHIPS</small><strong>{analysis?.summary.edge_count??'—'}</strong></div><div><small>DB2 TABLES</small><strong>{analysis?.summary.table_count??'—'}</strong></div></section>
+  <div className="sectionhead"><div><h3>Dependency Map</h3><p>Automatically extracted relationships across uploaded source.</p></div><span className="tag">{analysis?'LIVE ANALYSIS':'SAMPLE PREVIEW'}</span></div>
+  {analysis?<GraphView graph={analysis.graph}/>:<div className="emptygraph"><div className="sample-node">CUSTJOB.jcl</div><span className="line">↓</span><div className="sample-node blue">CUSTPROC.cbl</div><div className="sample-branches"><div>→ CUSTCOPY</div><div>→ CUSTOMER</div><div>→ CUSTLOOK</div></div><p>Upload sample files from <code>backend/data/samples</code> to explore the graph.</p></div>}
+  <section className="tools"><div className="panel"><div className="sectionhead"><div><h3>Change Impact</h3><p>Find dependent components before a change.</p></div></div><div className="fieldrow"><input value={change} onChange={e=>setChange(e.target.value)} placeholder="e.g. CUSTOMER"/><button onClick={runImpact}>Analyze impact</button></div>{impact&&<div className="result"><div className={`risk ${impact.risk.toLowerCase()}`}>{impact.risk} RISK</div><b>{impact.impact_count} impacted component(s)</b><p>{impact.recommendation}</p><ul>{impact.impacted.map((n:any)=><li key={n.id}>{n.label} <small>{n.type}</small></li>)}</ul></div>}</div>
+  <div className="panel"><div className="sectionhead"><div><h3>Mainframe Knowledge Hub</h3><p>Quick lookup for common production errors.</p></div></div><div className="fieldrow"><input value={code} onChange={e=>setCode(e.target.value)} placeholder="SQLCODE or abend"/><button onClick={lookupError}>Look up</button></div>{errorInfo&&<div className="result">{errorInfo.error?<p>{errorInfo.error}</p>:<><div className="risk medium">{errorInfo.system} · {errorInfo.code}</div><b>{errorInfo.title}</b><p>{errorInfo.meaning}</p><ul>{errorInfo.checks?.map((s:string)=><li key={s}>{s}</li>)}</ul></>}</div>}</div></section>
+  <footer>LegacyLens · Hackathon MVP <span>Deterministic extraction · AI features planned</span></footer></section></main>;
+}

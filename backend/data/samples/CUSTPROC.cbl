@@ -1,0 +1,14 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. CUSTPROC.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       COPY CUSTCOPY.
+       PROCEDURE DIVISION.
+           CALL 'CUSTLOOK'.
+           EXEC SQL
+             SELECT CUSTOMER_NAME
+               INTO :WS-CUSTOMER-NAME
+               FROM CUSTOMER
+              WHERE CUSTOMER_ID = :WS-CUSTOMER-ID
+           END-EXEC.
+           GOBACK.

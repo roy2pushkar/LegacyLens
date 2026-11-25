@@ -1,0 +1,2 @@
+       01 WS-CUSTOMER-ID PIC 9(9).
+       01 WS-CUSTOMER-NAME PIC X(50).
